@@ -77,7 +77,7 @@ public class CreateOhifViewerInputJson
 	{
 		CreateOhifViewerInputJson viewer = new CreateOhifViewerInputJson();
 		// viewer.run(args[0], args[1], args[2]);
-		viewer.run("https://bifrost.icr.ac.uk:8443/XNAT_anonymised", "testuser", "test");
+		viewer.run("http://10.1.1.17", "testuser", "test");
 	}
 
 	
@@ -157,19 +157,19 @@ public class CreateOhifViewerInputJson
 					
 					// Use Etherj to scan the input directory for DICOM files and collate
 					// all the required metadata.
-					String      basePath = "/data/xnatsimond/" + proj + "/arc001/"
+					String      basePath = "/data/xnat/archive/" + proj + "/arc001/"
 							                  + exp + "/SCANS";
 					System.out.println(basePath);
-					//PatientRoot root     = scanPath(basePath);
+					PatientRoot root     = scanPath(basePath);
 				}
 				
 			}
 			
       }
 
-/*		
-
 		
+
+/*		
 		// Transform the Etherj output into the structure needed by the
 		// OHIF viewer.
 		OhifViewerInput ovi = createOhifViewerInput(basePath, transactionId, XnatUrl, root);
