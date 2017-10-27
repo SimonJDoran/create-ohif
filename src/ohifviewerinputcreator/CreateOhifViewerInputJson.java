@@ -37,6 +37,7 @@ package ohifviewerinputcreator;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.google.gson.stream.JsonWriter;
 import etherj.PathScan;
 import etherj.dicom.DicomReceiver;
 import etherj.dicom.DicomToolkit;
@@ -47,12 +48,13 @@ import etherj.dicom.SopInstance;
 import etherj.dicom.Study;
 import exceptions.XNATException;
 import generalUtilities.Vector2D;
+import java.io.File;
+import java.io.FileWriter;
 import java.util.List;
 import java.io.IOException;
-import java.io.InputStream;
 import java.net.MalformedURLException;
+import java.net.URL;
 import java.util.ArrayList;
-import java.util.Collections;
 import org.dcm4che2.data.DicomObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -67,6 +69,8 @@ public class CreateOhifViewerInputJson
 {
 	private static final Logger logger =
 		LoggerFactory.getLogger(CreateOhifViewerInputJson.class);
+   
+   private static final String SEP = File.separator; 
 
 	private final DicomToolkit dcmTk = DicomToolkit.getDefaultToolkit();
 
@@ -77,23 +81,27 @@ public class CreateOhifViewerInputJson
 	{
 		CreateOhifViewerInputJson viewer = new CreateOhifViewerInputJson();
 		// viewer.run(args[0], args[1], args[2]);
-		viewer.run("https://bifrost.icr.ac.uk:8443/XNAT_anonymised", "testuser", "test");
+		viewer.run("http://10.1.1.17", "/data/xnat/archive", "testuser", "test",
+                 "/var/lib/tomcat7/webapps/ROOT/api/");
 	}
 
 	
 	
-	private void run(String XnatUrl, String userid, String passwd)
+	private void run(String xnatUrl, String xnatArchivePath, String userid,
+                    String passwd,  String tomcatDir)
 	{
 		XNATServerConnection  xnsc;
+      String protocol;
 		// Open a connection to the XNAT server and loop successively over
 		// projects, subjects and experiments.
 		try
 		{
-			xnsc = new XNATServerConnection(XnatUrl, userid, passwd);
+			xnsc = new XNATServerConnection(xnatUrl, userid, passwd);
+         protocol = (new URL(xnatUrl)).getProtocol();
 		}
 		catch (MalformedURLException exMU)
 		{
-			logger.error("Can't open connection to " + XnatUrl + " - malformed URL");
+			logger.error("Can't open connection to " + xnatUrl + " - malformed URL");
 			return;
 		}
 		
@@ -152,51 +160,66 @@ public class CreateOhifViewerInputJson
 
 				for (int k=0; k<resultExp.size(); k++)
 				{
-					String exp = resultExp.atom(5, k);
-					System.out.println(">> " + exp);
+					String expId    = resultExp.atom(0, k);
+               String expLabel = resultExp.atom(5, k);
+					System.out.println(">> " + expLabel);
 					
 					// Use Etherj to scan the input directory for DICOM files and collate
 					// all the required metadata.
-					String      basePath = "/data/xnatsimond/" + proj + "/arc001/"
-							                  + exp + "/SCANS";
-					System.out.println(basePath);
-					//PatientRoot root     = scanPath(basePath);
+               // xnatScanPath gives the actual base path in the filesystem under
+               // which the scan data are stored, whereas xnatScanUrl gives the
+               // route to get at the data via dicomweb/REST.
+					String xnatScanPath = xnatArchivePath + SEP + proj + SEP + "arc001"
+							                  + SEP + expLabel + SEP + "SCANS";
+               
+               String xnatScanUrl  = xnatUrl.replace(protocol, "dicomweb")
+                                       + "/data/archive/projects" + proj
+                                       + "/subject/" + subj
+                                       + "/experiments/" + expId
+                                       + "/scans/";
+               
+					System.out.println(xnatScanPath);
+					PatientRoot root     = scanPath(xnatScanPath);
+               String transactionId = expId;
+
+               // Transform the Etherj output into the structure needed by the
+               // OHIF viewer.
+               OhifViewerInput ovi = createOhifViewerInput(transactionId, xnatScanUrl, root);
+
+               // Serialise the viewer input to JSON.
+               Gson gson = new GsonBuilder().setPrettyPrinting().create();
+               String serialisedOvi = gson.toJson(ovi);
+
+               String filename = tomcatDir + expId + ".json";
+               try
+               {
+                  gson.toJson(ovi, new FileWriter(filename));                 
+               }
+               catch (IOException exIO)
+               {
+                  logger.error("Can't write JSON file " + filename + exIO.getMessage());
+                  return;
+               }
+                                        
 				}
 				
 			}
 			
       }
-
-/*		
-
-		
-		// Transform the Etherj output into the structure needed by the
-		// OHIF viewer.
-		OhifViewerInput ovi = createOhifViewerInput(basePath, transactionId, XnatUrl, root);
-		
-		// Serialise the viewer input to JSON.
-		Gson gson = new GsonBuilder().setPrettyPrinting().create();
-		String serialisedOvi = gson.toJson(ovi);
-		
-		System.out.println(serialisedOvi);
-		
-		System.out.println("Here");
-		
-*/	
 		
 	}
 	
 	private PatientRoot scanPath(String path)
 	{
-		logger.info("DICOM search: "+path);
-		DicomReceiver dcmRx = new DicomReceiver();
+		logger.info("DICOM search: " + path);
+		DicomReceiver dcmRec = new DicomReceiver();
 		PathScan<DicomObject> pathScan = dcmTk.createPathScan();
-		pathScan.addContext(dcmRx);
+		pathScan.addContext(dcmRec);
 		PatientRoot root = null;
 		try
 		{
 			pathScan.scan(path, true);
-			root = dcmRx.getPatientRoot();
+			root = dcmRec.getPatientRoot();
 		}
 		catch (IOException ex)
 		{
@@ -206,9 +229,9 @@ public class CreateOhifViewerInputJson
 	}
 	
 	
-	private OhifViewerInput createOhifViewerInput(String basePath, String transactionId, String XnatUrl, PatientRoot root)
+	private OhifViewerInput createOhifViewerInput(String transactionId, String xnatScanUrl, PatientRoot root)
 	{
-		OhifViewerInput ovi     = new OhifViewerInput();
+		OhifViewerInput ovi = new OhifViewerInput();
 		List<OhifViewerInputStudy> oviStudyList = new ArrayList<>();
 		
 		ovi.setTransactionId(transactionId);
@@ -253,7 +276,8 @@ public class CreateOhifViewerInputJson
 						oviInst.setFrameOfReferenceUID(sop.getFrameOfReferenceUid());
 						oviInst.setImagePositionPatient(dbl2DcmString(sop.getImagePositionPatient()));
 						oviInst.setImageOrientationPatient(dbl2DcmString(sop.getImageOrientationPatient()));
-						oviInst.setUrl("dicomweb://" );
+                  String file = new File(sop.getPath()).getName();
+						oviInst.setUrl(xnatScanUrl + ser.getNumber() + "/resources/DICOM/files/" + file);
 						oviInst.setPixelSpacing(dbl2DcmString(sop.getPixelSpacing()));
 					}
 				}
