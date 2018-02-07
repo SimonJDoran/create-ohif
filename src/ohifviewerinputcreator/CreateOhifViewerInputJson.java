@@ -77,7 +77,7 @@ public class CreateOhifViewerInputJson
 	{
 		CreateOhifViewerInputJson viewer = new CreateOhifViewerInputJson();
 		// viewer.run(args[0], args[1], args[2]);
-		viewer.run("https://bifrost.icr.ac.uk:8443/XNAT_anonymised", "testuser", "test");
+		viewer.run("http://10.1.1.15:8080", "admin", "admin");
 	}
 
 	
