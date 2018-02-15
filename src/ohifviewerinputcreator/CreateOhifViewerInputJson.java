@@ -1,5 +1,5 @@
 /********************************************************************
-* Copyright (c) 2017, Institute of Cancer Research
+* Copyright (c) 2018, Institute of Cancer Research
 * All rights reserved.
 * 
 * Redistribution and use in source and binary forms, with or without
@@ -76,8 +76,7 @@ public class CreateOhifViewerInputJson
 	public static void main(String[] args)
 	{
 		CreateOhifViewerInputJson viewer = new CreateOhifViewerInputJson();
-		// viewer.run(args[0], args[1], args[2]);
-		viewer.run("http://10.1.1.15:8080", "admin", "admin");
+		viewer.run(args[0], args[1], args[2]);
 	}
 
 	
@@ -100,6 +99,10 @@ public class CreateOhifViewerInputJson
 		xnsc.connect();
 		XNATRESTToolkit xnrt = new XNATRESTToolkit(xnsc);
 		
+		// Note that Vector2D is a very "un-Javalike" class that I wrote when
+		// I had only a few week's programming experience of Java. It's now
+		// deprecated(!) but was the basis of the very useful XNATRESTToolkit
+		// package. All due for refactoring when I get time.
 		Vector2D<String> resultProj;
 		try
       {
@@ -113,7 +116,8 @@ public class CreateOhifViewerInputJson
       }
 		
 
-      for (int i=0; i<resultProj.size(); i++)
+      // Initial demonstrator creates new JSONs for everything in the XNAT database!
+		for (int i=0; i<resultProj.size(); i++)
       {
          String proj = resultProj.atom(0, i);
 			System.out.println(proj);
@@ -156,39 +160,26 @@ public class CreateOhifViewerInputJson
 					System.out.println(">> " + exp);
 					
 					// Use Etherj to scan the input directory for DICOM files and collate
-					// all the required metadata.
+					// all the required metadata. Note this undesirable temporary
+					// dependence of the actual path to the data.
 					String      basePath = "/data/xnatsimond/" + proj + "/arc001/"
 							                  + exp + "/SCANS";
-					System.out.println(basePath);
-					//PatientRoot root     = scanPath(basePath);
-				}
+					
+					PatientRoot root     = scanPath(basePath);
+					
+					String      jsonData = jsonify(basePath, root, exp, XnatUrl);
 				
-			}
-			
+					// Now go and do something with it!
+					
+				}	
+			}		
       }
-
-/*		
-
-		
-		// Transform the Etherj output into the structure needed by the
-		// OHIF viewer.
-		OhifViewerInput ovi = createOhifViewerInput(basePath, transactionId, XnatUrl, root);
-		
-		// Serialise the viewer input to JSON.
-		Gson gson = new GsonBuilder().setPrettyPrinting().create();
-		String serialisedOvi = gson.toJson(ovi);
-		
-		System.out.println(serialisedOvi);
-		
-		System.out.println("Here");
-		
-*/	
-		
 	}
+	
 	
 	private PatientRoot scanPath(String path)
 	{
-		logger.info("DICOM search: "+path);
+		logger.info("DICOM search: " + path);
 		DicomReceiver dcmRx = new DicomReceiver();
 		PathScan<DicomObject> pathScan = dcmTk.createPathScan();
 		pathScan.addContext(dcmRx);
@@ -204,6 +195,24 @@ public class CreateOhifViewerInputJson
 		}
 		return root;
 	}
+	
+	
+	
+
+	private String jsonify(String basePath, PatientRoot root, String transactionId, String XnatUrl)
+	{
+		// Transform the Etherj output into the structure needed by the
+		// OHIF viewer.
+		OhifViewerInput ovi = createOhifViewerInput(basePath, transactionId, XnatUrl, root);
+		
+		// Serialise the viewer input to JSON.
+		Gson gson = new GsonBuilder().setPrettyPrinting().create();
+		String serialisedOvi = gson.toJson(ovi);
+		
+		return serialisedOvi;
+	}
+	
+	
 	
 	
 	private OhifViewerInput createOhifViewerInput(String basePath, String transactionId, String XnatUrl, PatientRoot root)
@@ -253,6 +262,8 @@ public class CreateOhifViewerInputJson
 						oviInst.setFrameOfReferenceUID(sop.getFrameOfReferenceUid());
 						oviInst.setImagePositionPatient(dbl2DcmString(sop.getImagePositionPatient()));
 						oviInst.setImageOrientationPatient(dbl2DcmString(sop.getImageOrientationPatient()));
+						
+						// This crucial part is waiting on us deciding exactly where we store the JSON files!
 						oviInst.setUrl("dicomweb://" );
 						oviInst.setPixelSpacing(dbl2DcmString(sop.getPixelSpacing()));
 					}
