@@ -37,7 +37,6 @@ package ohifviewerinputcreator;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
-import com.google.gson.stream.JsonWriter;
 import etherj.PathScan;
 import etherj.dicom.DicomReceiver;
 import etherj.dicom.DicomToolkit;
@@ -49,7 +48,6 @@ import etherj.dicom.Study;
 import exceptions.XNATException;
 import generalUtilities.Vector2D;
 import java.io.File;
-import java.io.FileWriter;
 import java.util.List;
 import java.io.IOException;
 import java.net.MalformedURLException;
@@ -80,13 +78,13 @@ public class CreateOhifViewerInputJson
 	public static void main(String[] args)
 	{
 		CreateOhifViewerInputJson viewer = new CreateOhifViewerInputJson();
-		viewer.run(args[0], args[1], args[2]);
+		viewer.run(args[0], args[1], args[2], args[3]);
 	}
 
 	
 	
 	private void run(String xnatUrl, String xnatArchivePath, String userid,
-                    String passwd,  String tomcatDir)
+                    String passwd)
 	{
 		XNATServerConnection  xnsc;
       String protocol;
@@ -168,14 +166,20 @@ public class CreateOhifViewerInputJson
 					System.out.println(">> " + expLabel);
 					
 					// Use Etherj to scan the input directory for DICOM files and collate
-					// all the required metadata. Note this undesirable temporary
-					// dependence of the actual path to the data.
-					String      basePath = "/data/xnatsimond/" + proj + "/arc001/"
-							                  + exp + "/SCANS";
+					// all the required metadata.
+					// xnatScanPath gives the actual base path in the filesystem under
+               // which the scan data are stored, whereas xnatScanUrl gives the
+               // route to get at the data via dicomweb/REST.
+					String      xnatScanPath = xnatArchivePath + SEP + proj + SEP + "arc001"
+							                     + SEP + expLabel + SEP + "SCANS";
+               
+               String      xnatScanUrl  = xnatUrl.replace(protocol, "dicomweb")
+                                          + "/data/archive/projects" + proj
+                                          + "/subject/" + subj
+                                          + "/experiments/" + expId
+                                          + "/scans/";
 					
-					PatientRoot root     = scanPath(basePath);
-					
-					String      jsonData = jsonify(basePath, root, exp, XnatUrl);
+					String      jsonData     = jsonify(xnatScanPath, xnatScanUrl, expId);
 				
 					// Now go and do something with it!
 					
@@ -188,7 +192,10 @@ public class CreateOhifViewerInputJson
 	private PatientRoot scanPath(String path)
 	{
 		logger.info("DICOM search: " + path);
+		
+		DicomReceiver         dcmRec   = new DicomReceiver();
 		PathScan<DicomObject> pathScan = dcmTk.createPathScan();
+		
 		pathScan.addContext(dcmRec);
 		PatientRoot root = null;
 		try
@@ -206,11 +213,14 @@ public class CreateOhifViewerInputJson
 	
 	
 
-	private String jsonify(String basePath, PatientRoot root, String transactionId, String XnatUrl)
+	private String jsonify(String xnatScanPath, String xnatScanUrl, String transactionId)
 	{
+		// Use Etherj to do the heavy lifting of sifting through all the scan data.
+		PatientRoot root = scanPath(xnatScanPath);
+					
 		// Transform the Etherj output into the structure needed by the
 		// OHIF viewer.
-		OhifViewerInput ovi = createOhifViewerInput(basePath, transactionId, XnatUrl, root);
+		OhifViewerInput ovi = createOhifViewerInput(transactionId, xnatScanUrl, root);
 		
 		// Serialise the viewer input to JSON.
 		Gson gson = new GsonBuilder().setPrettyPrinting().create();
@@ -269,8 +279,11 @@ public class CreateOhifViewerInputJson
 						oviInst.setFrameOfReferenceUID(sop.getFrameOfReferenceUid());
 						oviInst.setImagePositionPatient(dbl2DcmString(sop.getImagePositionPatient()));
 						oviInst.setImageOrientationPatient(dbl2DcmString(sop.getImageOrientationPatient()));
-		
 						oviInst.setPixelSpacing(dbl2DcmString(sop.getPixelSpacing()));
+						
+						// Here's the bit that needs changing when we decide exactly how we want to store the files.
+						String file = new File(sop.getPath()).getName();
+						oviInst.setUrl(xnatScanUrl + ser.getNumber() + "/resources/DICOM/files/" + file);						
 					}
 				}
 			}
@@ -290,5 +303,6 @@ public class CreateOhifViewerInputJson
 		}
 		return sb.toString();
 	}
+	
 }
-		DicomReceiver dcmRec = new DicomReceiver();
+
